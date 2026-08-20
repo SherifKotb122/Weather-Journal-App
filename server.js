@@ -1,3 +1,7 @@
+// Loads OWM_API_KEY (and anything else) from a local .env file in dev.
+// Deployed environments (Railway/Render) set env vars directly - this is a no-op there.
+require('dotenv').config();
+
 // Setup empty JS object to act as endpoint for all routes
 var projectData = {};
 
@@ -19,11 +23,37 @@ app.use(cors());
 // app.use('/website',express.static('website'));
 app.use(express.static(__dirname + '/website'));
 
+// OpenWeatherMap key lives server-side only - never sent to the browser.
+// Set OWM_API_KEY in your environment (or a local .env file, see .env.example).
+const OWM_API_KEY = process.env.OWM_API_KEY;
 
 // Routes
 app.get('/',function(req,res){
 	 res.sendFile('./website/index.html', { root: __dirname });
 });
+
+// Proxies the weather lookup so the API key never ships to the client.
+app.get('/weather', async (req, res) => {
+	const zip = req.query.zip;
+	if (!zip) {
+		return res.status(400).send({ error: 'zip query param is required' });
+	}
+	if (!OWM_API_KEY) {
+		return res.status(500).send({ error: 'Server is missing OWM_API_KEY' });
+	}
+	try {
+		const url = `https://api.openweathermap.org/data/2.5/weather?zip=${encodeURIComponent(zip)}&appid=${OWM_API_KEY}&units=metric`;
+		const response = await fetch(url);
+		const data = await response.json();
+		if (!response.ok) {
+			return res.status(response.status).send(data);
+		}
+		res.send(data);
+	} catch (err) {
+		res.status(502).send({ error: 'Failed to reach weather service' });
+	}
+});
+
 // making get route to contain our projectData
 app.get('/get-data',function(req,res){
 	res.send(projectData);
@@ -38,7 +68,7 @@ app.post('/post-data',function(req,res){
 	// projectData = newData;
 	// projectData.length= 0;
 	// projectData.push(newData);
-	
+
 	res.send(projectData);
 	// console.log(projectData);
 
